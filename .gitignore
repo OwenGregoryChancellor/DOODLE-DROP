@@ -1,0 +1,16 @@
+# Node
+node_modules/
+
+# Local data
+*.db
+*.sqlite
+*.sqlite3
+
+# App artifacts
+inbox.txt
+
+# OS
+.DS_Store
+
+# Codex
+.codex/

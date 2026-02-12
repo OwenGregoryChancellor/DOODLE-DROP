@@ -1,0 +1,11 @@
+{
+  "manifest_version": 3,
+  "name": "Doodle Drop",
+  "version": "1.0.0",
+  "description": "Draw quick doodles and share them with friends.",
+  "action": {
+    "default_popup": "popup.html"
+  },
+  "permissions": ["storage"],
+  "host_permissions": ["http://localhost:3000/*"]
+}
