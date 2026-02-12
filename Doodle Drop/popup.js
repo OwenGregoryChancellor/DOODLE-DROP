@@ -43,7 +43,7 @@ const DEFAULT_STATE = {
   friends: [],
   doodles: [],
   inbox: [],
-  backendUrl: "https://mighty-eyes-bake.loca.lt",
+  backendUrl: "https://quick-years-walk.loca.lt",
   myCode: "",
   notifiedAccepted: []
 };
@@ -184,9 +184,12 @@ async function loadState() {
   const { doodleState } = await chrome.storage.local.get("doodleState");
   state = { ...DEFAULT_STATE, ...(doodleState || {}) };
   if (!state.myCode) state.myCode = generateInviteCode();
+  // Always sync to latest default backend URL so tunnel changes propagate
+  state.backendUrl = DEFAULT_STATE.backendUrl;
   yourName.value = state.yourName || "";
-  backendUrl.value = state.backendUrl || "http://localhost:3000";
+  backendUrl.value = state.backendUrl;
   myCode.value = state.myCode;
+  await saveState();
 }
 
 async function saveState() {
