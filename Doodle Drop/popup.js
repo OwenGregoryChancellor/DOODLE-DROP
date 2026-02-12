@@ -1,7 +1,13 @@
+/* ========================================
+   Doodle Drop — Popup Logic
+   ======================================== */
+
+// === DOM References ===
 const canvas = document.getElementById("doodleCanvas");
 const ctx = canvas.getContext("2d");
 const colorPicker = document.getElementById("colorPicker");
 const sizePicker = document.getElementById("sizePicker");
+const sizePreview = document.getElementById("sizePreview");
 const eraserBtn = document.getElementById("eraserBtn");
 const clearBtn = document.getElementById("clearBtn");
 const saveBtn = document.getElementById("saveBtn");
@@ -24,7 +30,11 @@ const backendUrl = document.getElementById("backendUrl");
 const myCode = document.getElementById("myCode");
 const copyMyCodeBtn = document.getElementById("copyMyCodeBtn");
 const syncInboxBtn = document.getElementById("syncInboxBtn");
+const toast = document.getElementById("toast");
+const settingsToggle = document.getElementById("settingsToggle");
+const settingsPanel = document.getElementById("settingsPanel");
 
+// === State ===
 const DEFAULT_STATE = {
   yourName: "",
   friends: [],
@@ -42,6 +52,44 @@ let sendMode = "link";
 let canvasCssWidth = 0;
 let canvasCssHeight = 0;
 
+// === Toast ===
+let toastTimer = null;
+
+function showToast(message) {
+  toast.textContent = message;
+  toast.classList.add("show");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => toast.classList.remove("show"), 2500);
+}
+
+// === Tabs ===
+function switchTab(tabName) {
+  document.querySelectorAll(".tab-content").forEach((el) => el.classList.remove("active"));
+  document.querySelectorAll(".tab").forEach((el) => el.classList.remove("active"));
+  const panel = document.getElementById(`tab-${tabName}`);
+  const btn = document.querySelector(`.tab[data-tab="${tabName}"]`);
+  if (panel) panel.classList.add("active");
+  if (btn) btn.classList.add("active");
+  if (tabName === "draw") {
+    requestAnimationFrame(() => resizeCanvas());
+  }
+}
+
+function switchGalleryTab(name) {
+  document.querySelectorAll(".gallery-tab").forEach((el) => el.classList.remove("active"));
+  document.querySelectorAll(".gallery-content").forEach((el) => el.classList.remove("active"));
+  const tab = document.querySelector(`.gallery-tab[data-gallery="${name}"]`);
+  const content = document.getElementById(`gallery-${name}`);
+  if (tab) tab.classList.add("active");
+  if (content) content.classList.add("active");
+}
+
+function toggleSettings() {
+  settingsPanel.classList.toggle("open");
+  settingsToggle.classList.toggle("active");
+}
+
+// === Canvas ===
 function resizeCanvas() {
   const ratio = window.devicePixelRatio || 1;
   const rect = canvas.getBoundingClientRect();
@@ -62,10 +110,7 @@ function fillCanvas() {
 
 function getPointerPos(event) {
   const rect = canvas.getBoundingClientRect();
-  return {
-    x: event.clientX - rect.left,
-    y: event.clientY - rect.top
-  };
+  return { x: event.clientX - rect.left, y: event.clientY - rect.top };
 }
 
 function setBrush() {
@@ -96,8 +141,17 @@ function endDraw() {
   lastPoint = null;
 }
 
+function updateSizePreview() {
+  const size = Number(sizePicker.value);
+  sizePreview.style.width = size + "px";
+  sizePreview.style.height = size + "px";
+}
+
+// === Helpers ===
 function makeId() {
-  return crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random().toString(16).slice(2);
+  return crypto.randomUUID
+    ? crypto.randomUUID()
+    : String(Date.now()) + Math.random().toString(16).slice(2);
 }
 
 function generateInviteCode() {
@@ -114,6 +168,7 @@ function buildInboxLink(code) {
   return `${base}/inbox/${code}`;
 }
 
+// === State Persistence ===
 async function loadState() {
   const { doodleState } = await chrome.storage.local.get("doodleState");
   state = { ...DEFAULT_STATE, ...(doodleState || {}) };
@@ -127,6 +182,7 @@ async function saveState() {
   await chrome.storage.local.set({ doodleState: state });
 }
 
+// === Rendering ===
 function renderFriends() {
   friendsList.innerHTML = "";
   friendSelect.innerHTML = "";
@@ -134,23 +190,41 @@ function renderFriends() {
   if (state.friends.length === 0) {
     const option = document.createElement("option");
     option.value = "";
-    option.textContent = "Add a friend";
+    option.textContent = "Add a friend first";
     friendSelect.appendChild(option);
+
+    const li = document.createElement("li");
+    li.className = "empty-state";
+    li.textContent = "No friends added yet";
+    friendsList.appendChild(li);
   }
 
   state.friends.forEach((friend) => {
     const li = document.createElement("li");
-    li.innerHTML = `
-      <div>
-        <div><strong>${friend.name}</strong></div>
-        <div>Code: ${friend.code}</div>
-        <div>${friend.phone || "No phone"}</div>
-      </div>
-    `;
+
+    const info = document.createElement("div");
+    info.className = "friend-info";
+
+    const nameEl = document.createElement("div");
+    nameEl.className = "friend-name";
+    nameEl.textContent = friend.name;
+
+    const meta = document.createElement("div");
+    meta.className = "friend-meta";
+    meta.textContent = friend.code + (friend.phone ? " \u00b7 " + friend.phone : "");
+
+    info.appendChild(nameEl);
+    info.appendChild(meta);
+    li.appendChild(info);
+
     const removeBtn = document.createElement("button");
-    removeBtn.textContent = "Remove";
+    removeBtn.className = "btn-icon-sm";
+    removeBtn.title = "Remove friend";
+    removeBtn.innerHTML =
+      '<svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M3 3l8 8M11 3l-8 8"/></svg>';
     removeBtn.addEventListener("click", () => removeFriend(friend.id));
     li.appendChild(removeBtn);
+
     friendsList.appendChild(li);
 
     const option = document.createElement("option");
@@ -164,7 +238,7 @@ function renderGallery(container, items, emptyText) {
   container.innerHTML = "";
   if (items.length === 0) {
     const empty = document.createElement("div");
-    empty.className = "preview-body";
+    empty.className = "empty-state";
     empty.textContent = emptyText;
     container.appendChild(empty);
     return;
@@ -172,14 +246,22 @@ function renderGallery(container, items, emptyText) {
   items.forEach((item) => {
     const card = document.createElement("div");
     card.className = "card";
+
     const img = document.createElement("img");
     img.src = item.dataUrl;
     img.alt = "Doodle";
-    img.addEventListener("click", () => loadDoodle(item.dataUrl));
+    img.addEventListener("click", () => {
+      loadDoodle(item.dataUrl);
+      switchTab("draw");
+    });
+
     const del = document.createElement("button");
-    del.className = "ghost";
-    del.textContent = "Delete";
+    del.className = "card-delete";
+    del.title = "Delete";
+    del.innerHTML =
+      '<svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M2 2l8 8M10 2l-8 8"/></svg>';
     del.addEventListener("click", () => removeDoodle(item.id, container === inbox));
+
     card.appendChild(img);
     card.appendChild(del);
     container.appendChild(card);
@@ -211,11 +293,13 @@ function loadDoodle(dataUrl) {
   img.src = dataUrl;
 }
 
+// === Actions ===
 async function addFriend(name, code, phone) {
   state.friends.push({ id: makeId(), name, code, phone: phone || "" });
   await saveState();
   renderFriends();
   renderMessagePreview();
+  showToast(`${name} added!`);
 }
 
 async function removeFriend(id) {
@@ -231,6 +315,7 @@ async function saveDoodle() {
   state.doodles = state.doodles.slice(0, 12);
   await saveState();
   renderGallery(gallery, state.doodles, "No doodles yet.");
+  showToast("Doodle saved!");
 }
 
 async function removeDoodle(id, fromInbox) {
@@ -241,24 +326,27 @@ async function removeDoodle(id, fromInbox) {
   }
   await saveState();
   renderGallery(gallery, state.doodles, "No doodles yet.");
-  renderGallery(inbox, state.inbox, "Nothing imported yet.");
+  renderGallery(inbox, state.inbox, "Nothing in inbox yet.");
 }
 
 async function copyText(value, fallbackLabel) {
   try {
     await navigator.clipboard.writeText(value);
+    return true;
   } catch (err) {
     alert(`Could not copy. ${fallbackLabel}:\n${value}`);
+    return false;
   }
 }
 
 async function copyShareLink() {
   const friend = state.friends.find((f) => f.id === friendSelect.value);
   if (!friend?.code) {
-    alert("Add a friend with an invite code first.");
+    showToast("Add a friend with an invite code first");
     return;
   }
-  await copyText(buildInboxLink(friend.code), "Link");
+  const ok = await copyText(buildInboxLink(friend.code), "Link");
+  if (ok) showToast("Link copied!");
 }
 
 async function postDoodle(toCode) {
@@ -274,22 +362,20 @@ async function postDoodle(toCode) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload)
   });
-  if (!response.ok) {
-    throw new Error("Failed to send doodle");
-  }
+  if (!response.ok) throw new Error("Failed to send doodle");
 }
 
 async function sendNow() {
   const friend = state.friends.find((f) => f.id === friendSelect.value);
   if (!friend?.code) {
-    alert("Select a friend with an invite code.");
+    showToast("Select a friend first");
     return;
   }
 
   try {
     await postDoodle(friend.code);
   } catch (err) {
-    alert("Could not send to backend. Check backend URL and server.");
+    showToast("Could not send. Check backend.");
     return;
   }
 
@@ -299,13 +385,14 @@ async function sendNow() {
     if (friend.phone) {
       const smsUrl = `sms:${friend.phone}?&body=${encodeURIComponent(body)}`;
       window.open(smsUrl, "_blank");
+      showToast("Opening SMS...");
     } else {
-      await copyText(body, "SMS text");
-      alert("No phone saved. SMS text copied to clipboard.");
+      const ok = await copyText(body, "SMS text");
+      if (ok) showToast("SMS text copied!");
     }
   } else {
-    await copyText(link, "Link");
-    alert("Link copied. Send it to your friend.");
+    const ok = await copyText(link, "Link");
+    if (ok) showToast("Sent! Link copied.");
   }
 }
 
@@ -322,9 +409,11 @@ async function syncInbox() {
       from: item.fromName || ""
     }));
     await saveState();
-    renderGallery(inbox, state.inbox, "Nothing imported yet.");
+    renderGallery(inbox, state.inbox, "Nothing in inbox yet.");
+    const count = state.inbox.length;
+    showToast(`Synced! ${count} doodle${count !== 1 ? "s" : ""}`);
   } catch (err) {
-    alert("Failed to sync inbox. Check backend URL and server.");
+    showToast("Sync failed. Check backend URL.");
   }
 }
 
@@ -335,7 +424,9 @@ function setSendMode(mode) {
   renderMessagePreview();
 }
 
+// === Event Wiring ===
 function wireEvents() {
+  // Canvas drawing
   canvas.addEventListener("pointerdown", (event) => {
     canvas.setPointerCapture(event.pointerId);
     startDraw(event);
@@ -344,24 +435,29 @@ function wireEvents() {
   canvas.addEventListener("pointerup", endDraw);
   canvas.addEventListener("pointerleave", endDraw);
 
+  // Drawing tools
   eraserBtn.addEventListener("click", () => {
     usingEraser = !usingEraser;
     eraserBtn.classList.toggle("active", usingEraser);
   });
-
   clearBtn.addEventListener("click", () => {
     ctx.clearRect(0, 0, canvasCssWidth, canvasCssHeight);
     fillCanvas();
   });
+  sizePicker.addEventListener("input", updateSizePreview);
 
+  // Draw actions
   saveBtn.addEventListener("click", saveDoodle);
   sendBtn.addEventListener("click", sendNow);
+
+  // Share actions
   sendNowBtn.addEventListener("click", sendNow);
   copyCodeBtn.addEventListener("click", copyShareLink);
-
   sendInExtensionBtn.addEventListener("click", () => setSendMode("link"));
   sendSmsBtn.addEventListener("click", () => setSendMode("sms"));
+  friendSelect.addEventListener("change", renderMessagePreview);
 
+  // Friend form
   friendForm.addEventListener("submit", async (event) => {
     event.preventDefault();
     if (!friendName.value.trim() || !friendCode.value.trim()) return;
@@ -371,35 +467,44 @@ function wireEvents() {
     friendPhone.value = "";
   });
 
-  friendSelect.addEventListener("change", renderMessagePreview);
-  colorPicker.addEventListener("change", renderMessagePreview);
-  sizePicker.addEventListener("change", renderMessagePreview);
+  // Settings
   yourName.addEventListener("input", async () => {
     state.yourName = yourName.value.trim();
     await saveState();
     renderMessagePreview();
   });
-
   backendUrl.addEventListener("change", async () => {
     state.backendUrl = backendUrl.value.trim() || "http://localhost:3000";
     backendUrl.value = state.backendUrl;
     await saveState();
     renderMessagePreview();
   });
-
   copyMyCodeBtn.addEventListener("click", async () => {
-    await copyText(state.myCode, "Invite code");
+    const ok = await copyText(state.myCode, "Invite code");
+    if (ok) showToast("Code copied!");
+  });
+  syncInboxBtn.addEventListener("click", syncInbox);
+  settingsToggle.addEventListener("click", toggleSettings);
+
+  // Tab navigation
+  document.querySelectorAll(".tab").forEach((btn) => {
+    btn.addEventListener("click", () => switchTab(btn.dataset.tab));
   });
 
-  syncInboxBtn.addEventListener("click", syncInbox);
+  // Gallery sub-tabs
+  document.querySelectorAll(".gallery-tab").forEach((btn) => {
+    btn.addEventListener("click", () => switchGalleryTab(btn.dataset.gallery));
+  });
 }
 
+// === Init ===
 async function init() {
   await loadState();
   resizeCanvas();
+  updateSizePreview();
   renderFriends();
   renderGallery(gallery, state.doodles, "No doodles yet.");
-  renderGallery(inbox, state.inbox, "Nothing imported yet.");
+  renderGallery(inbox, state.inbox, "Nothing in inbox yet.");
   setSendMode("link");
   wireEvents();
   renderMessagePreview();
