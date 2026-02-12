@@ -43,7 +43,7 @@ const DEFAULT_STATE = {
   friends: [],
   doodles: [],
   inbox: [],
-  backendUrl: "http://localhost:3000",
+  backendUrl: "https://mighty-eyes-bake.loca.lt",
   myCode: "",
   notifiedAccepted: []
 };
@@ -154,6 +154,11 @@ function updateSizePreview() {
 }
 
 // === Helpers ===
+function apiFetch(url, options = {}) {
+  const headers = { "Bypass-Tunnel-Reminder": "true", ...(options.headers || {}) };
+  return fetch(url, { ...options, headers });
+}
+
 function makeId() {
   return crypto.randomUUID
     ? crypto.randomUUID()
@@ -369,7 +374,7 @@ async function postDoodle(toCode) {
   const url = `${base}/api/doodles`;
   let response;
   try {
-    response = await fetch(url, {
+    response = await apiFetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload)
@@ -418,7 +423,7 @@ async function sendNow() {
 async function syncInbox() {
   const base = (state.backendUrl || "").replace(/\/$/, "");
   try {
-    const response = await fetch(`${base}/api/inbox/${state.myCode}`);
+    const response = await apiFetch(`${base}/api/inbox/${state.myCode}`);
     const data = await response.json();
     if (!data.ok) throw new Error("bad response");
     state.inbox = (data.items || []).map((item) => ({
@@ -440,7 +445,7 @@ async function syncInbox() {
 async function sendFriendRequest(toCode) {
   const base = (state.backendUrl || "").replace(/\/$/, "");
   try {
-    const response = await fetch(`${base}/api/friend-requests`, {
+    const response = await apiFetch(`${base}/api/friend-requests`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -459,7 +464,7 @@ async function sendFriendRequest(toCode) {
 async function fetchFriendRequests() {
   const base = (state.backendUrl || "").replace(/\/$/, "");
   try {
-    const response = await fetch(`${base}/api/friend-requests/${state.myCode}`);
+    const response = await apiFetch(`${base}/api/friend-requests/${state.myCode}`);
     const data = await response.json();
     if (!data.ok) return;
 
@@ -489,7 +494,7 @@ async function fetchFriendRequests() {
 async function acceptRequest(requestId, fromCode, fromName) {
   const base = (state.backendUrl || "").replace(/\/$/, "");
   try {
-    await fetch(`${base}/api/friend-requests/${requestId}`, {
+    await apiFetch(`${base}/api/friend-requests/${requestId}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ status: "accepted", code: state.myCode })
@@ -518,7 +523,7 @@ async function acceptRequest(requestId, fromCode, fromName) {
 async function declineRequest(requestId) {
   const base = (state.backendUrl || "").replace(/\/$/, "");
   try {
-    await fetch(`${base}/api/friend-requests/${requestId}`, {
+    await apiFetch(`${base}/api/friend-requests/${requestId}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ status: "declined", code: state.myCode })
