@@ -357,12 +357,21 @@ async function postDoodle(toCode) {
     dataUrl: canvas.toDataURL("image/png")
   };
   const base = (state.backendUrl || "").replace(/\/$/, "");
-  const response = await fetch(`${base}/api/doodles`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload)
-  });
-  if (!response.ok) throw new Error("Failed to send doodle");
+  const url = `${base}/api/doodles`;
+  let response;
+  try {
+    response = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+  } catch (networkErr) {
+    throw new Error(`Network error: ${networkErr.message}`);
+  }
+  if (!response.ok) {
+    const text = await response.text().catch(() => "");
+    throw new Error(`Server ${response.status}: ${text}`);
+  }
 }
 
 async function sendNow() {
@@ -375,7 +384,8 @@ async function sendNow() {
   try {
     await postDoodle(friend.code);
   } catch (err) {
-    showToast("Could not send. Check backend.");
+    console.error("Send failed:", err);
+    showToast(err.message || "Could not send. Check backend.");
     return;
   }
 

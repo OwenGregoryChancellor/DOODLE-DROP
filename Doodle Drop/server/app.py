@@ -59,21 +59,27 @@ def init_db():
 
 # ── CORS ─────────────────────────────────────────────────────────
 
+@app.before_request
+def handle_preflight():
+    """Respond to every OPTIONS preflight so the browser is satisfied."""
+    if request.method == "OPTIONS":
+        response = app.make_default_options_response()
+        return response
+
+
 @app.after_request
 def add_cors_headers(response):
     response.headers["Access-Control-Allow-Origin"] = "*"
     response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
     response.headers["Access-Control-Allow-Headers"] = "Content-Type"
+    response.headers["Access-Control-Max-Age"] = "86400"
     return response
 
 
 # ── API Routes ───────────────────────────────────────────────────
 
-@app.route("/api/doodles", methods=["POST", "OPTIONS"])
+@app.route("/api/doodles", methods=["POST"])
 def create_doodle():
-    if request.method == "OPTIONS":
-        return "", 204
-
     body = request.get_json(silent=True) or {}
     to_code = body.get("toCode")
     data_url = body.get("dataUrl")
