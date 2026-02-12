@@ -382,6 +382,130 @@ input[type="range"]::-webkit-slider-thumb:hover {
   flex: 1;
 }
 
+/* --- Badge --- */
+.badge {
+  background: var(--primary);
+  color: white;
+  font-size: 10px;
+  font-weight: 700;
+  min-width: 16px;
+  height: 16px;
+  border-radius: 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 4px;
+  line-height: 1;
+  animation: badgePop 0.3s cubic-bezier(0.68, -0.55, 0.27, 1.55);
+}
+
+@keyframes badgePop {
+  0% { transform: scale(0); }
+  100% { transform: scale(1); }
+}
+
+/* --- Friend Requests --- */
+.requests-section {
+  margin-bottom: 14px;
+}
+
+.requests-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--primary);
+  margin-bottom: 8px;
+}
+
+.requests-list {
+  display: grid;
+  gap: 6px;
+}
+
+.request-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 12px;
+  background: var(--primary-light);
+  border: 1.5px solid #ffd5c9;
+  border-radius: var(--radius-sm);
+  animation: slideIn 0.2s ease;
+}
+
+.request-info {
+  min-width: 0;
+}
+
+.request-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.request-code {
+  font-size: 11px;
+  color: var(--text-tertiary);
+  margin-top: 1px;
+}
+
+.request-actions {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.btn-accept {
+  padding: 5px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  font-family: inherit;
+  border: none;
+  border-radius: 6px;
+  background: #22c55e;
+  color: white;
+  cursor: pointer;
+  transition: all var(--transition);
+}
+
+.btn-accept:hover {
+  background: #16a34a;
+  transform: translateY(-1px);
+}
+
+.btn-decline {
+  padding: 5px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  font-family: inherit;
+  border: 1.5px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all var(--transition);
+}
+
+.btn-decline:hover {
+  border-color: #e53e3e;
+  color: #e53e3e;
+  background: #fde8e8;
+}
+
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 /* --- Friends Tab --- */
 .friend-form {
   display: grid;

@@ -39,7 +39,7 @@ def close_db(exc):
 
 
 def init_db():
-    """Create the doodles table and index if they don't exist."""
+    """Create tables and indexes if they don't exist."""
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(str(DB_PATH))
     conn.execute(
@@ -53,6 +53,18 @@ def init_db():
         )"""
     )
     conn.execute("CREATE INDEX IF NOT EXISTS idx_doodles_to_code ON doodles(to_code)")
+    conn.execute(
+        """CREATE TABLE IF NOT EXISTS friend_requests (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            from_code  TEXT    NOT NULL,
+            from_name  TEXT    NOT NULL,
+            to_code    TEXT    NOT NULL,
+            status     TEXT    NOT NULL DEFAULT 'pending',
+            created_at INTEGER NOT NULL
+        )"""
+    )
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_fr_to_code ON friend_requests(to_code)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_fr_from_code ON friend_requests(from_code)")
     conn.commit()
     conn.close()
 
@@ -70,7 +82,7 @@ def handle_preflight():
 @app.after_request
 def add_cors_headers(response):
     response.headers["Access-Control-Allow-Origin"] = "*"
-    response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
+    response.headers["Access-Control-Allow-Methods"] = "GET, POST, PATCH, OPTIONS"
     response.headers["Access-Control-Allow-Headers"] = "Content-Type"
     response.headers["Access-Control-Max-Age"] = "86400"
     return response
@@ -122,6 +134,105 @@ def get_inbox(code):
 
     items = [dict(row) for row in rows]
     return jsonify(ok=True, items=items)
+
+
+# ── Friend Requests ──────────────────────────────────────────────
+
+@app.route("/api/friend-requests", methods=["POST"])
+def create_friend_request():
+    body = request.get_json(silent=True) or {}
+    from_code = body.get("fromCode")
+    from_name = body.get("fromName")
+    to_code = body.get("toCode")
+
+    if not from_code or not to_code or not from_name:
+        return jsonify(ok=False, error="Missing fromCode, fromName, or toCode"), 400
+
+    # Don't send a request to yourself
+    if from_code == to_code:
+        return jsonify(ok=False, error="Cannot send a request to yourself"), 400
+
+    db = get_db()
+
+    # Check for duplicate pending request
+    existing = db.execute(
+        "SELECT id FROM friend_requests WHERE from_code = ? AND to_code = ? AND status = 'pending'",
+        (from_code, to_code),
+    ).fetchone()
+    if existing:
+        return jsonify(ok=True, id=existing["id"], duplicate=True)
+
+    created_at = int(time.time() * 1000)
+    cursor = db.execute(
+        "INSERT INTO friend_requests (from_code, from_name, to_code, status, created_at) VALUES (?, ?, ?, 'pending', ?)",
+        (from_code, from_name, to_code, created_at),
+    )
+    db.commit()
+    return jsonify(ok=True, id=cursor.lastrowid, createdAt=created_at)
+
+
+@app.route("/api/friend-requests/<code>", methods=["GET"])
+def get_friend_requests(code):
+    """Return incoming pending requests and recently accepted outgoing requests."""
+    if not code:
+        return jsonify(ok=False, error="Missing code"), 400
+
+    db = get_db()
+
+    # Pending requests TO this user
+    incoming = db.execute(
+        """SELECT id, from_code AS fromCode, from_name AS fromName,
+                  to_code AS toCode, status, created_at AS createdAt
+             FROM friend_requests
+            WHERE to_code = ? AND status = 'pending'
+         ORDER BY created_at DESC
+            LIMIT 50""",
+        (code,),
+    ).fetchall()
+
+    # Requests FROM this user that were accepted (so they can get notified)
+    accepted = db.execute(
+        """SELECT id, from_code AS fromCode, from_name AS fromName,
+                  to_code AS toCode, status, created_at AS createdAt
+             FROM friend_requests
+            WHERE from_code = ? AND status = 'accepted'
+         ORDER BY created_at DESC
+            LIMIT 50""",
+        (code,),
+    ).fetchall()
+
+    return jsonify(
+        ok=True,
+        incoming=[dict(r) for r in incoming],
+        accepted=[dict(r) for r in accepted],
+    )
+
+
+@app.route("/api/friend-requests/<int:request_id>", methods=["PATCH"])
+def update_friend_request(request_id):
+    body = request.get_json(silent=True) or {}
+    new_status = body.get("status")
+    responder_code = body.get("code", "")
+
+    if new_status not in ("accepted", "declined"):
+        return jsonify(ok=False, error="Status must be 'accepted' or 'declined'"), 400
+
+    db = get_db()
+    row = db.execute("SELECT * FROM friend_requests WHERE id = ?", (request_id,)).fetchone()
+    if not row:
+        return jsonify(ok=False, error="Request not found"), 404
+
+    # Only the recipient can accept/decline
+    if responder_code and row["to_code"] != responder_code:
+        return jsonify(ok=False, error="Not authorized"), 403
+
+    db.execute(
+        "UPDATE friend_requests SET status = ? WHERE id = ?",
+        (new_status, request_id),
+    )
+    db.commit()
+
+    return jsonify(ok=True, id=request_id, status=new_status)
 
 
 # ── Web Inbox Page ───────────────────────────────────────────────

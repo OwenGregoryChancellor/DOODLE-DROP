@@ -33,6 +33,9 @@ const syncInboxBtn = document.getElementById("syncInboxBtn");
 const toast = document.getElementById("toast");
 const settingsToggle = document.getElementById("settingsToggle");
 const settingsPanel = document.getElementById("settingsPanel");
+const requestBadge = document.getElementById("requestBadge");
+const requestsSection = document.getElementById("requestsSection");
+const requestsList = document.getElementById("requestsList");
 
 // === State ===
 const DEFAULT_STATE = {
@@ -41,7 +44,8 @@ const DEFAULT_STATE = {
   doodles: [],
   inbox: [],
   backendUrl: "http://localhost:3000",
-  myCode: ""
+  myCode: "",
+  notifiedAccepted: []
 };
 
 let state = { ...DEFAULT_STATE };
@@ -51,6 +55,8 @@ let usingEraser = false;
 let sendMode = "link";
 let canvasCssWidth = 0;
 let canvasCssHeight = 0;
+let pendingRequests = [];
+let pollTimer = null;
 
 // === Toast ===
 let toastTimer = null;
@@ -300,6 +306,9 @@ async function addFriend(name, code, phone) {
   renderFriends();
   renderMessagePreview();
   showToast(`${name} added!`);
+
+  // Send a friend request so the recipient is notified
+  sendFriendRequest(code);
 }
 
 async function removeFriend(id) {
@@ -427,6 +436,167 @@ async function syncInbox() {
   }
 }
 
+// === Friend Requests ===
+async function sendFriendRequest(toCode) {
+  const base = (state.backendUrl || "").replace(/\/$/, "");
+  try {
+    const response = await fetch(`${base}/api/friend-requests`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        fromCode: state.myCode,
+        fromName: state.yourName || "Someone",
+        toCode
+      })
+    });
+    const data = await response.json();
+    if (!data.ok) console.warn("Friend request failed:", data.error);
+  } catch (err) {
+    console.warn("Could not send friend request:", err);
+  }
+}
+
+async function fetchFriendRequests() {
+  const base = (state.backendUrl || "").replace(/\/$/, "");
+  try {
+    const response = await fetch(`${base}/api/friend-requests/${state.myCode}`);
+    const data = await response.json();
+    if (!data.ok) return;
+
+    const incoming = data.incoming || [];
+
+    // Check for newly accepted requests (our outgoing requests that were accepted)
+    const accepted = data.accepted || [];
+    const notifiedIds = state.notifiedAccepted || [];
+    for (const req of accepted) {
+      if (!notifiedIds.includes(req.id)) {
+        showToast(`${req.toCode} accepted your friend request!`);
+        notifiedIds.push(req.id);
+      }
+    }
+    state.notifiedAccepted = notifiedIds;
+    await saveState();
+
+    // Update pending requests and UI
+    pendingRequests = incoming;
+    renderRequests();
+    updateBadge();
+  } catch (err) {
+    console.warn("Could not fetch friend requests:", err);
+  }
+}
+
+async function acceptRequest(requestId, fromCode, fromName) {
+  const base = (state.backendUrl || "").replace(/\/$/, "");
+  try {
+    await fetch(`${base}/api/friend-requests/${requestId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status: "accepted", code: state.myCode })
+    });
+  } catch (err) {
+    showToast("Could not accept. Check backend.");
+    return;
+  }
+
+  // Auto-add the requester as a friend if not already added
+  const alreadyFriend = state.friends.some((f) => f.code === fromCode);
+  if (!alreadyFriend) {
+    state.friends.push({ id: makeId(), name: fromName, code: fromCode, phone: "" });
+    await saveState();
+    renderFriends();
+    renderMessagePreview();
+  }
+
+  // Remove from pending list
+  pendingRequests = pendingRequests.filter((r) => r.id !== requestId);
+  renderRequests();
+  updateBadge();
+  showToast(`${fromName} added as friend!`);
+}
+
+async function declineRequest(requestId) {
+  const base = (state.backendUrl || "").replace(/\/$/, "");
+  try {
+    await fetch(`${base}/api/friend-requests/${requestId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status: "declined", code: state.myCode })
+    });
+  } catch (err) {
+    console.warn("Could not decline request:", err);
+  }
+
+  pendingRequests = pendingRequests.filter((r) => r.id !== requestId);
+  renderRequests();
+  updateBadge();
+}
+
+function renderRequests() {
+  if (pendingRequests.length === 0) {
+    requestsSection.style.display = "none";
+    return;
+  }
+
+  requestsSection.style.display = "block";
+  requestsList.innerHTML = "";
+
+  pendingRequests.forEach((req) => {
+    const card = document.createElement("div");
+    card.className = "request-card";
+
+    const info = document.createElement("div");
+    info.className = "request-info";
+
+    const name = document.createElement("div");
+    name.className = "request-name";
+    name.textContent = req.fromName;
+
+    const code = document.createElement("div");
+    code.className = "request-code";
+    code.textContent = req.fromCode;
+
+    info.appendChild(name);
+    info.appendChild(code);
+    card.appendChild(info);
+
+    const actions = document.createElement("div");
+    actions.className = "request-actions";
+
+    const acceptBtn = document.createElement("button");
+    acceptBtn.className = "btn-accept";
+    acceptBtn.textContent = "Accept";
+    acceptBtn.addEventListener("click", () => acceptRequest(req.id, req.fromCode, req.fromName));
+
+    const declineBtn = document.createElement("button");
+    declineBtn.className = "btn-decline";
+    declineBtn.textContent = "Decline";
+    declineBtn.addEventListener("click", () => declineRequest(req.id));
+
+    actions.appendChild(acceptBtn);
+    actions.appendChild(declineBtn);
+    card.appendChild(actions);
+
+    requestsList.appendChild(card);
+  });
+}
+
+function updateBadge() {
+  const count = pendingRequests.length;
+  if (count > 0) {
+    requestBadge.textContent = count;
+    requestBadge.style.display = "inline-flex";
+  } else {
+    requestBadge.style.display = "none";
+  }
+}
+
+function startPolling() {
+  // Poll immediately, then every 15 seconds
+  fetchFriendRequests();
+  pollTimer = setInterval(fetchFriendRequests, 15000);
+}
+
 function setSendMode(mode) {
   sendMode = mode;
   sendInExtensionBtn.classList.toggle("active", mode === "link");
@@ -518,6 +688,7 @@ async function init() {
   setSendMode("link");
   wireEvents();
   renderMessagePreview();
+  startPolling();
 }
 
 init();
